@@ -31,6 +31,7 @@ import numpy as np
 from tf.keras.models import Model
 from tf.keras.layers import Input, Dense, Conv2D, Conv2DTranspose, LeakyReLU, LocallyConnected2D, BatchNormalization, MaxPooling2D, Dropout, Flatten, Activation, Lambda
 from tf.keras.optimizers import Adam
+from tf.keras.losses import binary_crossentropy, mse
 from tf.keras.utils.vis_utils import plot_model
 
 class vizir:
@@ -40,34 +41,32 @@ class vizir:
         self.img_shape = img_shape
         self.latent_dim = latent_dims
         self.trained = 0
-        self.source_img = tf.Variable()
-        self.target_img = tf.Variable()
+        #self.source_img = tf.Variable()
+        #self.target_img = tf.Variable()
+        self.g_optimizer = Adam(learning_rate=self.LearningRate)
+        self.d_optimizer = Adam(learning_rate=self.LearningRate)
         
         self.optimizer = Adam(learning_rate = self.LearningRate)
         
-        # compile the IR Disciminator model
+        # compile the IR Disciminator model - Target
         self.IR_discriminator = self.discriminator_network()
         self.IR_discriminator.compile(optimizer=self.optimizer,loss='binary_crossentropy',metric=['accuracy'])
         
-        # compile the IR Generator model
+        # compile the IR Generator model - Target
         self.IR_f_net = self.feature_extractor_network()
         self.IR_g_net = self.generator_network()(self.IR_f_net)
         self.IR_generator = Model(inputs = in_image_IR, outputs = self.IR_g_net)
         self.IR_generator.compile(optimizer=self.optimizer,loss='binary_crossentropy',metric=['accuracy'])
         
-        # compile the Visual Disciminator model
-        self.Visualdiscriminator = self.discriminator_network()
-        self.Visualdiscriminator.compile(optimizer=self.optimizer,loss='binary_crossentropy',metric=['accuracy'])
+        # compile the Visual Disciminator model - Source
+        self.Visual_discriminator = self.discriminator_network()
+        self.Visual_discriminator.compile(optimizer=self.optimizer,loss='binary_crossentropy',metric=['accuracy'])
         
-        # compile the Visual Generator model
+        # compile the Visual Generator model - Visual
         self.Visual_f_net = self.feature_extractor_network()
         self.Visual_g_net = self.generator_network()(self.Visual_f_net)
         self.Visual_generator = Model(inputs = in_image_Vis, outputs = self.Visual_g_net)
-        self.Visual_generator.compile(optimizer=self.optimizer,loss='binary_crossentropy',metric=['accuracy'])
-        
-        # Define Losses
-        self.L_GAN_g = 
-                
+        self.Visual_generator.compile(optimizer=self.optimizer,loss='binary_crossentropy',metric=['accuracy'])                
 		
     def feature_extractor_network(self):
         # input
@@ -145,13 +144,34 @@ class vizir:
     def latent_noise_space(batch_size = 64):
         return np.random.normal(0,1,(batch_size,self.latent_dim))
     
+    def Generator_loss(srcimg,trgimg):
+        L_GAN_g1 = binary_crossentropy(self.IR_generator(srcimg),tf.ones_like(srcimg),from_logits=True)
+        L_GAN_g2 = binary_crossentropy(self.Visual_generator(trgimg),tf.ones_like(trgimg),from_logits=True)
+        L_Const = mse(self.Visual_f_net(srcimg),self.Visual_f_net(self.Visual_generator(srcimg))
+        L_TID = mse(trgimg,self.IR_generator(trgimg))
+        return L_GAN_g1 + L_GAN_g2 + L_Const + L_TID
+        
+        
+    def Discriminator_loss(srcimg,trgimg):
+        L_GAN_d_1 = binary_crossentropy(srcimg,tf.zeros_like(srcimg),from_logits=True)
+        L_GAN_d_2 = binary_crossentropy(trgimg,tf.zeros_like(trgimg),from_logits=True)
+        L_GAN_d_3 = binary_crossentropy(self.IR_discriminator(trgimg),tf.ones_like(trgimg),from_logits=True)
+        return L_GAN_d_1 + L_GAN_d_2 + L_GAN_d_1
+    
     def train(self,epoch,batch_size=64,training_set_vis,training_set_ir):        
-        for epoch in range(epoch):
-            # Train generator
-            src_fx = self.feature_extractor_network
+        for epoch in range(epoch):                
+            with tf.GradientTape(persistant=True) as g_tape, tf.GradientTape(persistant=True) as d_tape:
+                G_loss = self.Generator_loss(training_set_vis,training_set_ir)
+                D_loss = self.Discriminator_loss(training_set_vis,training_set_ir)
+                
+                g_gradient = g_tape.gradient(target=G_loss,source=self.Visual_generator.trainable_variables+self.IR_generator.trainable_variables)
+                d_gradient = d_tape.gradient(target=D_loss,source=self.Visual_discriminator.trainable_variables+self.IR_discriminator.trainable_variables)
+                
+                self.g_optimizer.apply_gradients(zip(g_gradient,self.Visual_generator.trainable_variables+self.IR_generator.trainable_variables)
+                self.d_optimizer.apply_gradients(zip(d_gradient,self.Visual_discriminator.trainable_variables+self.IR_discriminator.trainable_variables)
             
-            
-            indx = np.random.randint(0,training_set_vis.shape[0],batch_size)
+
+                
             
         
         
